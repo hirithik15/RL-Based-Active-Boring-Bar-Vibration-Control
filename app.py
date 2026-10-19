@@ -4,7 +4,6 @@
 The dashboard communicates with api.py. It does not control physical machinery.
 """
 
-import io
 import requests
 import numpy as np
 import pandas as pd

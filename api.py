@@ -1,6 +1,5 @@
 
 """FastAPI endpoints for the simulated boring-bar vibration-control demo."""
-import math
 import os
 from typing import Literal
 

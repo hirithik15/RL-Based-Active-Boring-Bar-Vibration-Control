@@ -12,7 +12,7 @@ import pandas as pd
 from stable_baselines3 import SAC
 
 from config import PLANT, TRAINING, DisturbanceConfig
-from controllers import NoControl, PIDController
+from controllers import PIDController
 from models import SingleModePlant, SinusoidalCuttingForce
 
 

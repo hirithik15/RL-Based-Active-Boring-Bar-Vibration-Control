@@ -11,7 +11,6 @@ import pandas as pd
 from stable_baselines3 import SAC
 
 from config import PLANT, TRAINING, EVALUATION, DisturbanceConfig
-from controllers import NoControl, PIDController
 from experiments import simulate_controller, calculate_metrics
 
 
