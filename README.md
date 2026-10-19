@@ -8,9 +8,9 @@ A Python simulation project that studies whether a Soft Actor-Critic (SAC) reinf
 
 The simulated plant follows
 
-\[
+$$
  m\ddot q + c\dot q + kq = F_{disturbance}(t) + F_{control}(t).
-\]
+$$
 
 The SAC agent receives normalized displacement, velocity, and the previous action, then selects a bounded control action. The simulation applies that action as control force. Its performance is compared with no control and a PID baseline using steady-state RMS vibration and control-effort metrics.
 
