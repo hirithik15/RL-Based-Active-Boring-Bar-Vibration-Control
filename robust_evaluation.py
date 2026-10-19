@@ -3,7 +3,7 @@
 
 from pathlib import Path
 import math
-
+import json
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -17,8 +17,8 @@ from models import SingleModePlant, SinusoidalCuttingForce
 
 
 # Keep PID fixed throughout testing; do not tune on the test conditions.
-KP, KI, KD = 50000.0, 0.0, 20.0
-MODEL_PATH = Path("results/sac_vibration_model.zip")
+PID_GAINS_PATH = Path("results/tuned_pid.json")
+MODEL_PATH = Path("results/sac_vibration_model_v2.zip")
 OUT = Path("results")
 DURATION_S = 0.2
 STEADY_FRACTION = 0.20
@@ -47,8 +47,7 @@ def make_conditions():
                 })
     return result
 
-
-def simulate(name, condition, sac=None):
+def simulate(name, condition, sac=None, pid_gains=None):
     plant = SingleModePlant(PLANT)
     plant.reset(0.0, 0.0)
 
@@ -60,8 +59,15 @@ def simulate(name, condition, sac=None):
 
     pid = None
     if name == "PID":
+        if pid_gains is None:
+            raise ValueError(
+                "PID gains missing. Run tune_pid.py first."
+            )
         pid = PIDController(
-            kp=KP, ki=KI, kd=KD, plant_config=PLANT
+            kp=pid_gains["kp"],
+            ki=pid_gains["ki"],
+            kd=pid_gains["kd"],
+            plant_config=PLANT,
         )
         pid.reset()
 
@@ -122,6 +128,16 @@ def main():
             f"Cannot find {MODEL_PATH}. Train SAC first or correct MODEL_PATH."
         )
 
+    if not PID_GAINS_PATH.exists():
+        raise FileNotFoundError(
+            f"Missing {PID_GAINS_PATH}. Run tune_pid.py first."
+        )
+
+    with PID_GAINS_PATH.open("r", encoding="utf-8") as f:
+        pid_gains = json.load(f)
+
+    print("Using tuned PID gains:", pid_gains)
+
     OUT.mkdir(exist_ok=True)
     sac = SAC.load(str(MODEL_PATH))
     conditions = make_conditions()
@@ -135,7 +151,10 @@ def main():
         # All controllers get exactly the same amplitude, frequency and phase.
         for name in ["No control", "PID", "SAC"]:
             metrics = simulate(
-                name, condition, sac if name == "SAC" else None
+                name,
+                condition,
+                sac=sac if name == "SAC" else None,
+                pid_gains=pid_gains,
             )
             rows.append({
                 "condition_id": cid,

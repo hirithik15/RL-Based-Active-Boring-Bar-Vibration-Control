@@ -15,7 +15,7 @@ from controllers import NoControl, PIDController
 from experiments import simulate_controller, calculate_metrics
 
 
-DEFAULT_MODEL_PATH = "results/sac_vibration_model.zip"
+DEFAULT_MODEL_PATH = "results/sac_vibration_model_v2.zip"
 ALLOWED_CONTROLLERS = ("No control", "PID", "SAC")
 
 

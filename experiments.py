@@ -11,7 +11,11 @@ from stable_baselines3 import SAC
 
 from config import PLANT, TRAINING, EVALUATION, DisturbanceConfig
 from models import SingleModePlant, SinusoidalCuttingForce
-from controllers import NoControl, PIDController
+from controllers import (
+    NoControl,
+    PIDController,
+    ActiveDampingController,
+)
 
 
 def simulate_controller(
@@ -30,12 +34,21 @@ def simulate_controller(
 
     if controller_name == "No control":
         controller = NoControl()
+
+    elif controller_name == "Active damping":
+        controller = ActiveDampingController(
+            velocity_gain=20.0,
+            plant_config=PLANT,
+        )
+
     elif controller_name == "PID":
         controller = PIDController(plant_config=PLANT)
+
     elif controller_name == "SAC":
         if model is None:
             raise ValueError("A trained SAC model is required.")
         controller = None
+
     else:
         raise ValueError(f"Unknown controller: {controller_name}")
 
@@ -236,7 +249,11 @@ def run_experiments(
     for condition_name, disturbance in conditions.items():
         condition_data = {}
 
-        for controller_name in ("No control", "PID", "SAC"):
+        for controller_name in ("No control",
+                                "Active damping",
+                                "PID",
+                                "SAC",
+                                ):
             data = simulate_controller(
                 controller_name=controller_name,
                 disturbance_config=disturbance,

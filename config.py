@@ -1,26 +1,24 @@
+"""Configuration for the paper-informed boring-bar vibration model.
 
-"""Central parameters for the single-mode boring-bar control surrogate.
-
-Values are separated into model parameters and experiment assumptions.
-This is an educational reduced-order model, not an identified digital twin.
+The plant is a reduced-order, single-mode simulation. It is not a
+validated digital twin and does not model regenerative chatter.
 """
+
 from dataclasses import dataclass
 import math
 
 
 @dataclass(frozen=True)
 class PlantConfig:
-    # Working modal-frequency hypothesis. Verify the source before citing it.
-    natural_frequency_hz: float = 174.0
-    damping_ratio: float = 0.012
+    # Open-loop cutting-force-to-displacement mode from the paper
+    natural_frequency_hz: float = 188.0
+    damping_ratio: float = 0.034
+    modal_stiffness_n_m: float = 2.6e6
 
-    # Normalization assumption, NOT an experimentally identified modal mass.
-    modal_mass_kg: float = 1.0
-
-    # Integration step: 10 kHz simulation update rate.
+    # Numerical integration step: 10 kHz
     dt_s: float = 1.0e-4
 
-    # Assumed generalized actuator force limit; not a measured actuator rating.
+    # Simulation generalized-force limit, NOT the physical actuator rating
     max_control_force_n: float = 2.0
 
     @property
@@ -28,8 +26,13 @@ class PlantConfig:
         return 2.0 * math.pi * self.natural_frequency_hz
 
     @property
+    def modal_mass_kg(self) -> float:
+        omega_n = self.natural_frequency_rad_s
+        return self.modal_stiffness_n_m / (omega_n**2)
+
+    @property
     def stiffness_n_m(self) -> float:
-        return self.modal_mass_kg * self.natural_frequency_rad_s**2
+        return self.modal_stiffness_n_m
 
     @property
     def damping_ns_m(self) -> float:
@@ -44,7 +47,7 @@ class PlantConfig:
 @dataclass(frozen=True)
 class DisturbanceConfig:
     amplitude_n: float = 1.0
-    frequency_hz: float = 174.0
+    frequency_hz: float = 188.0
     phase_rad: float = 0.0
 
 
@@ -52,8 +55,6 @@ class DisturbanceConfig:
 class TrainingConfig:
     seed: int = 42
     total_timesteps: int = 300_000
-
-    # A 0.2 s episode contains 2,000 simulation steps at dt = 1e-4 s.
     episode_duration_s: float = 0.2
 
     learning_rate: float = 3e-4
@@ -65,36 +66,33 @@ class TrainingConfig:
     train_freq: int = 1
     gradient_steps: int = 1
 
-    # Training randomization ranges; these are experiment assumptions.
+    # Randomized training disturbances
     force_amplitude_min_n: float = 0.5
     force_amplitude_max_n: float = 1.5
     force_frequency_min_hz: float = 150.0
     force_frequency_max_hz: float = 200.0
 
-    initial_displacement_max_m: float = 1.0e-5
+    # Initial-state randomization
+    initial_displacement_max_m: float = 1e-5
     initial_velocity_max_m_s: float = 0.005
 
-    # Observation normalization scales.
-    displacement_scale_m: float = 1.0e-4
+    # Observation normalization scales
+
+    displacement_scale_m: float = 1e-5
     velocity_scale_m_s: float = 0.05
 
-    # Reward weights.
     displacement_reward_weight: float = 1.0
-    control_effort_reward_weight: float = 0.05
-    action_change_reward_weight: float = 0.01
+    control_effort_reward_weight: float = 0.01
+    action_change_reward_weight: float = 0.005
 
 
 @dataclass(frozen=True)
 class EvaluationConfig:
     duration_s: float = 0.2
-
     nominal_amplitude_n: float = 1.0
-    nominal_frequency_hz: float = 174.0
-
-    # Shifted test condition: outside the training frequency range.
+    nominal_frequency_hz: float = 188.0
     unseen_amplitude_n: float = 1.4
     unseen_frequency_hz: float = 205.0
-
     test_phase_rad: float = 0.73
     plot_time_window_s: float = 0.2
 

@@ -1,0 +1,7 @@
+{
+  "kp": 50000.0,
+  "ki": 0.0,
+  "kd": 20.0,
+  "selection_metric": "mean normalized RMS + effort penalty + saturation penalty",
+  "training_condition_count": 18
+}
