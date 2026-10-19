@@ -26,7 +26,7 @@ env.py                    # Gymnasium environment used to train SAC
 sac_training.py           # SAC model construction and training
 experiments.py            # Standard comparisons, metrics and plots
 run_baseline.py           # Train SAC and run standard comparisons
-tune_pid.py                # Tune PID gains on designated tuning conditions
+tune_pid.py               # Tune PID gains on designated tuning conditions
 robust_evaluation.py      # Evaluate controllers over an 84-condition grid
 deployment_service.py     # Shared inference/service logic
 api.py                    # FastAPI endpoints
