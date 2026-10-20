@@ -13,7 +13,7 @@ from env import VibrationEnv
 def train_sac(
     total_timesteps=None,
     seed=None,
-    model_path="results/sac_vibration_model",
+    model_path="results/sac_machining_aware_v1",
 ):
     """Train SAC and save the trained model.
 
@@ -70,4 +70,8 @@ def train_sac(
 
 
 if __name__ == "__main__":
-    train_sac()
+    train_sac(
+        total_timesteps=300_000,
+        seed=42,
+        model_path="results/sac_machining_aware_v1",
+    )

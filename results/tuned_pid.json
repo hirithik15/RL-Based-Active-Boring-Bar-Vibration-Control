@@ -1,7 +1,25 @@
 {
-  "kp": 50000.0,
+  "kp": 2154434.6900318824,
   "ki": 0.0,
-  "kd": 20.0,
-  "selection_metric": "mean normalized RMS + effort penalty + saturation penalty",
-  "training_condition_count": 18
+  "kd": 1000.0,
+  "selection_metric": "mean normalized steady RMS + peak displacement penalty + control-effort penalty + saturation penalty; with worst-case weighting",
+  "training_condition_count": 36,
+  "search_bounds": {
+    "kp": [
+      0.0,
+      10000000.0
+    ],
+    "ki": [
+      0.0,
+      0.0
+    ],
+    "kd": [
+      0.0,
+      1000.0
+    ]
+  },
+  "validation_status": "evaluated",
+  "validation_mean_rms_reduction_percent": 53.7110702586975,
+  "validation_mean_saturation_fraction": 0.00325,
+  "validation_mean_score": 0.5099475865006763
 }

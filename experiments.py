@@ -1,5 +1,6 @@
 
-"""Run fair controller comparisons and save quantitative results."""
+"""Train-independent evaluation of controllers under machining-aware forces."""
+
 from pathlib import Path
 
 import matplotlib
@@ -9,8 +10,9 @@ import numpy as np
 import pandas as pd
 from stable_baselines3 import SAC
 
-from config import PLANT, TRAINING, EVALUATION, DisturbanceConfig
+from config import PLANT, TRAINING, EVALUATION, DisturbanceConfig, MachiningConfig
 from models import SingleModePlant, SinusoidalCuttingForce
+from cutting_force_model import MachiningCuttingForce
 from controllers import (
     NoControl,
     PIDController,
@@ -20,35 +22,47 @@ from controllers import (
 
 def simulate_controller(
     controller_name,
-    disturbance_config,
-    duration_s,
+    disturbance_config=None,
+    duration_s=0.2,
     model=None,
+    machining_config=None,
+    seed=12345,
 ):
-    """Simulate one controller using the shared plant integration method."""
+    """Simulate one controller with a shared plant and selected force model.
+
+    Pass machining_config to use the new stochastic/regenerative model.
+    The legacy disturbance_config argument remains for older scripts.
+    """
     if duration_s <= 0:
         raise ValueError("duration_s must be positive.")
 
     plant = SingleModePlant(PLANT)
     plant.reset(0.0, 0.0)
-    force_model = SinusoidalCuttingForce(disturbance_config)
+
+    if machining_config is not None:
+        force_model = MachiningCuttingForce(
+            config=machining_config,
+            dt_s=PLANT.dt_s,
+            rng=np.random.default_rng(seed),
+        )
+    else:
+        if disturbance_config is None:
+            disturbance_config = DisturbanceConfig()
+        force_model = SinusoidalCuttingForce(disturbance_config)
 
     if controller_name == "No control":
         controller = NoControl()
-
     elif controller_name == "Active damping":
         controller = ActiveDampingController(
             velocity_gain=20.0,
             plant_config=PLANT,
         )
-
     elif controller_name == "PID":
         controller = PIDController(plant_config=PLANT)
-
     elif controller_name == "SAC":
         if model is None:
             raise ValueError("A trained SAC model is required.")
         controller = None
-
     else:
         raise ValueError(f"Unknown controller: {controller_name}")
 
@@ -63,7 +77,14 @@ def simulate_controller(
     for step_index in range(n_steps):
         time_s = step_index * dt
         state = plant.state
-        disturbance_n = force_model(time_s)
+
+        if machining_config is not None:
+            disturbance_n = force_model(
+                time_s=time_s,
+                displacement_m=state.displacement_m,
+            )
+        else:
+            disturbance_n = force_model(time_s)
 
         if controller_name == "SAC":
             observation = np.asarray(
@@ -74,10 +95,7 @@ def simulate_controller(
                 ],
                 dtype=np.float32,
             )
-            action, _ = model.predict(
-                observation,
-                deterministic=True,
-            )
+            action, _ = model.predict(observation, deterministic=True)
             normalized_action = float(
                 np.clip(np.asarray(action).reshape(-1)[0], -1.0, 1.0)
             )
@@ -118,14 +136,13 @@ def simulate_controller(
 
 
 def calculate_metrics(data):
-    """Calculate full-record and steady-window vibration/control metrics."""
-    displacement = data["displacement_um"].to_numpy()
-    force = data["control_force_n"].to_numpy()
-
+    """Calculate vibration and control-effort metrics."""
     if len(data) == 0:
         raise ValueError("Cannot calculate metrics for empty data.")
 
-    # Discard the first 20% as a transient window for the steady metric.
+    displacement = data["displacement_um"].to_numpy()
+    force = data["control_force_n"].to_numpy()
+
     start = min(int(0.2 * len(data)), len(data) - 1)
     steady_displacement = displacement[start:]
 
@@ -145,18 +162,19 @@ def calculate_metrics(data):
 
 
 def _save_plots(condition_name, condition_data, output_dir):
-    """Save overlay, SAC-only zoom, and controller-force plots."""
+    """Save displacement, SAC detail, control force, and disturbance plots."""
     output_dir = Path(output_dir)
-    time_ms = condition_data["No control"]["time_s"].to_numpy() * 1000.0
+    time_ms = (
+        condition_data["No control"]["time_s"].to_numpy() * 1000.0
+    )
 
-    # Overlay can be dominated by the uncontrolled response.
     fig, ax = plt.subplots(figsize=(10, 5))
     for name, data in condition_data.items():
         ax.plot(
-            time_ms,
+            data["time_s"] * 1000.0,
             data["displacement_um"],
             label=name,
-            linewidth=1.1,
+            linewidth=1.0,
         )
     ax.set_title(f"Displacement comparison — {condition_name}")
     ax.set_xlabel("Time (ms)")
@@ -170,13 +188,12 @@ def _save_plots(condition_name, condition_data, output_dir):
     )
     plt.close(fig)
 
-    # A separate SAC plot avoids hiding its trace on the overlay scale.
     sac_data = condition_data["SAC"]
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.plot(
         sac_data["time_s"] * 1000.0,
         sac_data["displacement_um"],
-        linewidth=1.2,
+        linewidth=1.1,
         label="SAC",
     )
     ax.set_title(f"SAC displacement detail — {condition_name}")
@@ -219,47 +236,111 @@ def _save_plots(condition_name, condition_data, output_dir):
     fig.savefig(output_dir / f"control_{condition_name}.png", dpi=160)
     plt.close(fig)
 
+    fig, ax = plt.subplots(figsize=(10, 5))
+    for name, data in condition_data.items():
+        ax.plot(
+            data["time_s"] * 1000.0,
+            data["disturbance_force_n"],
+            label=name,
+            linewidth=0.9,
+        )
+    ax.set_title(f"Cutting force — {condition_name}")
+    ax.set_xlabel("Time (ms)")
+    ax.set_ylabel("Generalized cutting force (N)")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(
+        output_dir / f"cutting_force_{condition_name}.png",
+        dpi=160,
+    )
+    plt.close(fig)
+
 
 def run_experiments(
-    model_path="results/sac_vibration_model.zip",
+    model_path="results/sac_machining_aware_v1.zip",
     output_dir="results",
 ):
-    """Evaluate No Control, PID, and SAC on nominal and shifted inputs."""
+    """Compare all controllers on fixed nominal and shifted machining cases."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     model = SAC.load(str(model_path))
 
-    conditions = {
-        "nominal": DisturbanceConfig(
-            amplitude_n=EVALUATION.nominal_amplitude_n,
-            frequency_hz=EVALUATION.nominal_frequency_hz,
-            phase_rad=0.0,
+    common = dict(
+        feed_mm_rev=EVALUATION.feed_mm_rev,
+        depth_of_cut_mm=EVALUATION.depth_of_cut_mm,
+        specific_cutting_force_n_mm2=(
+            EVALUATION.specific_cutting_force_n_mm2
         ),
-        "unseen": DisturbanceConfig(
-            amplitude_n=EVALUATION.unseen_amplitude_n,
-            frequency_hz=EVALUATION.unseen_frequency_hz,
+        force_fluctuation_fraction=(
+            EVALUATION.force_fluctuation_fraction
+        ),
+        random_force_fraction=EVALUATION.random_force_fraction,
+        modal_participation=EVALUATION.modal_participation,
+        transient_rate_hz=EVALUATION.transient_rate_hz,
+        transient_fraction=EVALUATION.transient_fraction,
+        transient_decay_s=0.003,
+        regenerative_feedback_sign=1.0,
+    )
+
+    conditions = {
+        "nominal": MachiningConfig(
+            spindle_rpm=EVALUATION.nominal_spindle_rpm,
+            phase_rad=0.0,
+            **common,
+        ),
+        "unseen": MachiningConfig(
+            spindle_rpm=EVALUATION.unseen_spindle_rpm,
             phase_rad=EVALUATION.test_phase_rad,
+            # Increased disturbance uncertainty for the shifted test.
+            force_fluctuation_fraction=min(
+                0.60, EVALUATION.force_fluctuation_fraction * 1.35
+            ),
+            random_force_fraction=min(
+                0.25, EVALUATION.random_force_fraction * 1.5
+            ),
+            transient_rate_hz=EVALUATION.transient_rate_hz * 1.5,
+            **{
+                k: v for k, v in common.items()
+                if k not in {
+                    "force_fluctuation_fraction",
+                    "random_force_fraction",
+                    "transient_rate_hz",
+                }
+            },
         ),
     }
 
     all_metrics = []
     all_timeseries = []
 
-    for condition_name, disturbance in conditions.items():
+    for condition_index, (condition_name, machining) in enumerate(
+        conditions.items()
+    ):
+        print(f"\nCondition: {condition_name}")
+        print("Machining and force-model parameters:")
+        for key, value in machining.__dict__.items():
+            print(f"  {key}: {value}")
+
         condition_data = {}
 
-        for controller_name in ("No control",
-                                "Active damping",
-                                "PID",
-                                "SAC",
-                                ):
+        for controller_name in (
+            "No control",
+            "Active damping",
+            "PID",
+            "SAC",
+        ):
             data = simulate_controller(
                 controller_name=controller_name,
-                disturbance_config=disturbance,
+                machining_config=machining,
                 duration_s=EVALUATION.duration_s,
                 model=model if controller_name == "SAC" else None,
+                # Same seed across controllers: same random sequence for
+                # noise and event generation, though feedback differs.
+                seed=1000 + condition_index,
             )
+
             data.insert(0, "controller", controller_name)
             data.insert(0, "condition", condition_name)
             condition_data[controller_name] = data
@@ -282,7 +363,12 @@ def run_experiments(
     timeseries_frame.to_csv(timeseries_path, index=False)
 
     print("\nController metrics:")
-    print(metrics_frame.to_string(index=False, float_format=lambda x: f"{x:.6g}"))
+    print(
+        metrics_frame.to_string(
+            index=False,
+            float_format=lambda x: f"{x:.6g}",
+        )
+    )
     print(f"\nMetrics saved to: {metrics_path}")
     print(f"Time series saved to: {timeseries_path}")
     print(f"Plots saved under: {output_dir.resolve()}")
